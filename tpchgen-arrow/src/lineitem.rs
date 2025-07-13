@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::conversions::{decimal128_array_from_iter, to_arrow_date32};
 use crate::{DEFAULT_BATCH_SIZE, RecordBatchIterator};
 use arrow::array::{
@@ -5,6 +6,7 @@ use arrow::array::{
 };
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use std::sync::{Arc, LazyLock};
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 use tpchgen::generators::{LineItemGenerator, LineItemGeneratorIterator};
 
 /// Generate  [`LineItem`]s in [`RecordBatch`] format
@@ -154,21 +156,69 @@ static LINEITEM_SCHEMA: LazyLock<SchemaRef> = LazyLock::new(make_lineitem_schema
 
 fn make_lineitem_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("l_orderkey", DataType::Int64, false),
-        Field::new("l_partkey", DataType::Int64, false),
-        Field::new("l_suppkey", DataType::Int64, false),
-        Field::new("l_linenumber", DataType::Int32, false),
-        Field::new("l_quantity", DataType::Decimal128(15, 2), false),
-        Field::new("l_extendedprice", DataType::Decimal128(15, 2), false),
-        Field::new("l_discount", DataType::Decimal128(15, 2), false),
-        Field::new("l_tax", DataType::Decimal128(15, 2), false),
-        Field::new("l_returnflag", DataType::Utf8View, false),
-        Field::new("l_linestatus", DataType::Utf8View, false),
-        Field::new("l_shipdate", DataType::Date32, false),
-        Field::new("l_commitdate", DataType::Date32, false),
-        Field::new("l_receiptdate", DataType::Date32, false),
-        Field::new("l_shipinstruct", DataType::Utf8View, false),
-        Field::new("l_shipmode", DataType::Utf8View, false),
-        Field::new("l_comment", DataType::Utf8View, false),
+        Field::new("l_orderkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            1.to_string(),
+        )])),
+        Field::new("l_partkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            2.to_string(),
+        )])),
+        Field::new("l_suppkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            3.to_string(),
+        )])),
+        Field::new("l_linenumber", DataType::Int32, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            4.to_string(),
+        )])),
+        Field::new("l_quantity", DataType::Decimal128(15, 2), false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            5.to_string(),
+        )])),
+        Field::new("l_extendedprice", DataType::Decimal128(15, 2), false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            6.to_string(),
+        )])),
+        Field::new("l_discount", DataType::Decimal128(15, 2), false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            7.to_string(),
+        )])),
+        Field::new("l_tax", DataType::Decimal128(15, 2), false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            8.to_string(),
+        )])),
+        Field::new("l_returnflag", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            9.to_string(),
+        )])),
+        Field::new("l_linestatus", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            10.to_string(),
+        )])),
+        Field::new("l_shipdate", DataType::Date32, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            11.to_string(),
+        )])),
+        Field::new("l_commitdate", DataType::Date32, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            12.to_string(),
+        )])),
+        Field::new("l_receiptdate", DataType::Date32, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            13.to_string(),
+        )])),
+        Field::new("l_shipinstruct", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            14.to_string(),
+        )])),
+        Field::new("l_shipmode", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            15.to_string(),
+        )])),
+        Field::new("l_comment", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            16.to_string(),
+        )])),
     ]))
 }

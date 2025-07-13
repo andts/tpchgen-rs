@@ -17,12 +17,12 @@
 //!     catalog_type: "rest".to_string(),
 //!     catalog_uri: "http://localhost:8181".to_string(),
 //!     warehouse_location: "s3://my-bucket/warehouse".to_string(),
-//!     credentials: HashMap::new(),
+//!     properties: HashMap::new(),
 //! };
-//! 
+//!
 //! // Create generator and generate all tables for scale factor 1
 //! let generator = IcebergGenerator::new(config).await?;
-//! generator.generate_all_tables(1.0).await?;
+//! generator.generate_all_tables(1.0, 5).await?;
 //! # Ok(())
 //! # }
 //! ```
@@ -48,7 +48,7 @@ pub struct IcebergConfig {
     /// Base location for the warehouse
     pub warehouse_location: String,
     /// Additional credentials and configuration
-    pub credentials: HashMap<String, String>,
+    pub properties: HashMap<String, String>,
 }
 
 /// Error type for Iceberg operations

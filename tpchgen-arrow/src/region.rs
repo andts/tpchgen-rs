@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use crate::{DEFAULT_BATCH_SIZE, RecordBatchIterator};
 use arrow::array::{Int64Array, RecordBatch, StringViewArray};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use std::sync::{Arc, LazyLock};
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 use tpchgen::generators::{RegionGenerator, RegionGeneratorIterator};
 
 /// Generate  [`Region`]s in [`RecordBatch`] format
@@ -89,8 +91,17 @@ impl Iterator for RegionArrow {
 static REGION_SCHEMA: LazyLock<SchemaRef> = LazyLock::new(make_region_schema);
 fn make_region_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("r_regionkey", DataType::Int64, false),
-        Field::new("r_name", DataType::Utf8View, false),
-        Field::new("r_comment", DataType::Utf8View, false),
+        Field::new("r_regionkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            1.to_string(),
+        )])),
+        Field::new("r_name", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            2.to_string(),
+        )])),
+        Field::new("r_comment", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            3.to_string(),
+        )])),
     ]))
 }

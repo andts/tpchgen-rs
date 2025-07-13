@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use crate::conversions::{decimal128_array_from_iter, string_view_array_from_display_iter};
 use crate::{DEFAULT_BATCH_SIZE, RecordBatchIterator};
 use arrow::array::{Int32Array, Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use std::sync::{Arc, LazyLock};
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 use tpchgen::generators::{PartSuppGenerator, PartSuppGeneratorIterator};
 
 /// Generate [`PartSupp`]s in [`RecordBatch`] format
@@ -103,10 +105,25 @@ impl Iterator for PartSuppArrow {
 static PARTSUPP_SCHEMA: LazyLock<SchemaRef> = LazyLock::new(make_partsupp_schema);
 fn make_partsupp_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("ps_partkey", DataType::Int64, false),
-        Field::new("ps_suppkey", DataType::Int64, false),
-        Field::new("ps_availqty", DataType::Int32, false),
-        Field::new("ps_supplycost", DataType::Decimal128(15, 2), false),
-        Field::new("ps_comment", DataType::Utf8View, false),
+        Field::new("ps_partkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            1.to_string(),
+        )])),
+        Field::new("ps_suppkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            2.to_string(),
+        )])),
+        Field::new("ps_availqty", DataType::Int32, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            3.to_string(),
+        )])),
+        Field::new("ps_supplycost", DataType::Decimal128(15, 2), false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            4.to_string(),
+        )])),
+        Field::new("ps_comment", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            5.to_string(),
+        )])),
     ]))
 }

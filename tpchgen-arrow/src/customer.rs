@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use crate::conversions::{decimal128_array_from_iter, string_view_array_from_display_iter};
 use crate::{DEFAULT_BATCH_SIZE, RecordBatchIterator};
 use arrow::array::{Int64Array, RecordBatch};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use std::sync::{Arc, LazyLock};
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 use tpchgen::generators::{CustomerGenerator, CustomerGeneratorIterator};
 
 /// Generate [`Customer`]s in [`RecordBatch`] format
@@ -109,13 +111,37 @@ impl Iterator for CustomerArrow {
 static CUSTOMER_SCHEMA: LazyLock<SchemaRef> = LazyLock::new(make_customer_schema);
 fn make_customer_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("c_custkey", DataType::Int64, false),
-        Field::new("c_name", DataType::Utf8View, false),
-        Field::new("c_address", DataType::Utf8View, false),
-        Field::new("c_nationkey", DataType::Int64, false),
-        Field::new("c_phone", DataType::Utf8View, false),
-        Field::new("c_acctbal", DataType::Decimal128(15, 2), false),
-        Field::new("c_mktsegment", DataType::Utf8View, false),
-        Field::new("c_comment", DataType::Utf8View, false),
+        Field::new("c_custkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            1.to_string(),
+        )])),
+        Field::new("c_name", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            2.to_string(),
+        )])),
+        Field::new("c_address", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            3.to_string(),
+        )])),
+        Field::new("c_nationkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            4.to_string(),
+        )])),
+        Field::new("c_phone", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            5.to_string(),
+        )])),
+        Field::new("c_acctbal", DataType::Decimal128(15, 2), false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            6.to_string(),
+        )])),
+        Field::new("c_mktsegment", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            7.to_string(),
+        )])),
+        Field::new("c_comment", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            8.to_string(),
+        )])),
     ]))
 }

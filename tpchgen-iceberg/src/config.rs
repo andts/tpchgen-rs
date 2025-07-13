@@ -1,7 +1,6 @@
 //! Configuration management for Iceberg catalog connections
 
 use crate::{IcebergConfig, IcebergError, Result};
-// use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -19,7 +18,7 @@ impl IcebergConfig {
             catalog_type: "filesystem".to_string(),
             catalog_uri: format!("file://{}", warehouse_path.as_ref().display()),
             warehouse_location: format!("file://{}", warehouse_path.as_ref().display()),
-            credentials: HashMap::new(),
+            properties: HashMap::new(),
         }
     }
 
@@ -29,7 +28,7 @@ impl IcebergConfig {
             catalog_type: "rest".to_string(),
             catalog_uri: uri,
             warehouse_location,
-            credentials: HashMap::new(),
+            properties: HashMap::new(),
         }
     }
 
@@ -42,13 +41,13 @@ impl IcebergConfig {
             catalog_type: "glue".to_string(),
             catalog_uri: "glue".to_string(),
             warehouse_location,
-            credentials,
+            properties: credentials,
         }
     }
 
     /// Add a credential to the configuration
-    pub fn with_credential(mut self, key: String, value: String) -> Self {
-        self.credentials.insert(key, value);
+    pub fn with_property(mut self, key: String, value: String) -> Self {
+        self.properties.insert(key, value);
         self
     }
 
@@ -70,8 +69,8 @@ impl IcebergConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_local_filesystem_config() {
@@ -104,7 +103,7 @@ mod tests {
             catalog_type: "".to_string(),
             catalog_uri: "".to_string(),
             warehouse_location: "".to_string(),
-            credentials: HashMap::new(),
+            properties: HashMap::new(),
         };
         assert!(invalid_config.validate().is_err());
     }

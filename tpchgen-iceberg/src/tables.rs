@@ -1,284 +1,28 @@
 //! Table-specific Iceberg data generation
 
-use crate::{IcebergError, Result};
+use crate::Result;
 use arrow::array::RecordBatch;
-use iceberg::table::Table;
-use iceberg::writer::IcebergWriter;
-// use iceberg::writer::base_writer::data_file_writer::DataFileWriter;
-use std::sync::Arc;
+use arrow::datatypes::SchemaRef;
+use iceberg::arrow::arrow_schema_to_schema;
 use iceberg::spec::DataFile;
-use tpchgen_arrow::*;
+use iceberg::table::Table;
+use iceberg::transaction::{ApplyTransactionAction, Transaction};
+use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
+use iceberg::writer::file_writer::location_generator::{
+    DefaultFileNameGenerator, DefaultLocationGenerator,
+};
+use iceberg::writer::file_writer::ParquetWriterBuilder;
+use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
+use iceberg::Catalog;
+use parquet::file::properties::WriterProperties;
+use std::sync::Arc;
 use tpchgen::generators::*;
+use tpchgen_arrow::*;
 
-/// Writer for TPCH tables in Iceberg format
-pub struct IcebergTableWriter {
-    table: Arc<Table>,
-    writer: Option<Box<dyn IcebergWriter<arrow::array::RecordBatch>>>,
-}
-
-impl IcebergTableWriter {
-    /// Create a new Iceberg table writer
-    pub async fn new(table: Arc<Table>) -> Result<Self> {
-        Ok(IcebergTableWriter {
-            table,
-            writer: None,
-        })
-    }
-
-    /// Initialize the writer
-    pub async fn initialize(&mut self) -> Result<()> {
-        // For now, we'll skip the actual writer initialization
-        // This is a placeholder until we can determine the correct API
-        Ok(())
-    }
-
-    /// Write a batch of records to the table
-    pub async fn write_batch(&mut self, batch: RecordBatch) -> Result<()> {
-        if let Some(writer) = &mut self.writer {
-            writer.write(batch).await?;
-        } else {
-            return Err(IcebergError::Config("Writer not initialized".to_string()));
-        }
-        Ok(())
-    }
-
-    /// Close the writer and commit the data
-    pub async fn close(mut self) -> Result<Vec<DataFile>> {
-        if let Some(mut writer) = self.writer.take() {
-            Ok(writer.close().await.unwrap())
-        } else {
-            Err(IcebergError::Config("Writer already closed".to_string()))
-        }
-    }
-}
-
-/// Generate and write Region table data
-pub async fn generate_region_table(
-    table: Arc<Table>,
-    scale_factor: f64,
-    batch_size: usize,
-) -> Result<()> {
-    let mut writer = IcebergTableWriter::new(table).await?;
-    writer.initialize().await?;
-
-    let generator = RegionGenerator::new(scale_factor, 1, 1);
-    let mut arrow_generator = RegionArrow::new(generator).with_batch_size(batch_size);
-
-    while let Some(batch) = arrow_generator.next() {
-        writer.write_batch(batch).await?;
-    }
-
-    writer.close().await?;
-
-    //TODO create and commit an iceberg transaction to append created DataFile(s) to the table
-
-    Ok(())
-}
-
-/// Generate and write Nation table data
-pub async fn generate_nation_table(
-    table: Arc<Table>,
-    scale_factor: f64,
-    batch_size: usize,
-) -> Result<()> {
-    let mut writer = IcebergTableWriter::new(table).await?;
-    writer.initialize().await?;
-
-    let generator = NationGenerator::new(scale_factor, 1, 1);
-    let mut arrow_generator = NationArrow::new(generator).with_batch_size(batch_size);
-
-    while let Some(batch) = arrow_generator.next() {
-        writer.write_batch(batch).await?;
-    }
-
-    writer.close().await?;
-    Ok(())
-}
-
-/// Generate and write Customer table data
-pub async fn generate_customer_table(
-    table: Arc<Table>,
-    scale_factor: f64,
-    batch_size: usize,
-    parts: usize,
-    part: usize,
-) -> Result<()> {
-    let mut writer = IcebergTableWriter::new(table).await?;
-    writer.initialize().await?;
-
-    let generator = CustomerGenerator::new(scale_factor, parts as i32, part as i32);
-    let mut arrow_generator = CustomerArrow::new(generator).with_batch_size(batch_size);
-
-    while let Some(batch) = arrow_generator.next() {
-        writer.write_batch(batch).await?;
-    }
-
-    writer.close().await?;
-    Ok(())
-}
-
-/// Generate and write Supplier table data
-pub async fn generate_supplier_table(
-    table: Arc<Table>,
-    scale_factor: f64,
-    batch_size: usize,
-    parts: usize,
-    part: usize,
-) -> Result<()> {
-    let mut writer = IcebergTableWriter::new(table).await?;
-    writer.initialize().await?;
-
-    let generator = SupplierGenerator::new(scale_factor, parts as i32, part as i32);
-    let mut arrow_generator = SupplierArrow::new(generator).with_batch_size(batch_size);
-
-    while let Some(batch) = arrow_generator.next() {
-        writer.write_batch(batch).await?;
-    }
-
-    writer.close().await?;
-    Ok(())
-}
-
-/// Generate and write Part table data
-pub async fn generate_part_table(
-    table: Arc<Table>,
-    scale_factor: f64,
-    batch_size: usize,
-    parts: usize,
-    part: usize,
-) -> Result<()> {
-    let mut writer = IcebergTableWriter::new(table).await?;
-    writer.initialize().await?;
-
-    let generator = PartGenerator::new(scale_factor, parts as i32, part as i32);
-    let mut arrow_generator = PartArrow::new(generator).with_batch_size(batch_size);
-
-    while let Some(batch) = arrow_generator.next() {
-        writer.write_batch(batch).await?;
-    }
-
-    writer.close().await?;
-    Ok(())
-}
-
-/// Generate and write PartSupp table data
-pub async fn generate_partsupp_table(
-    table: Arc<Table>,
-    scale_factor: f64,
-    batch_size: usize,
-    parts: usize,
-    part: usize,
-) -> Result<()> {
-    let mut writer = IcebergTableWriter::new(table).await?;
-    writer.initialize().await?;
-
-    let generator = PartSuppGenerator::new(scale_factor, parts as i32, part as i32);
-    let mut arrow_generator = PartSuppArrow::new(generator).with_batch_size(batch_size);
-
-    while let Some(batch) = arrow_generator.next() {
-        writer.write_batch(batch).await?;
-    }
-
-    writer.close().await?;
-    Ok(())
-}
-
-/// Generate and write Orders table data
-pub async fn generate_orders_table(
-    table: Arc<Table>,
-    scale_factor: f64,
-    batch_size: usize,
-    parts: usize,
-    part: usize,
-) -> Result<()> {
-    let mut writer = IcebergTableWriter::new(table).await?;
-    writer.initialize().await?;
-
-    let generator = OrderGenerator::new(scale_factor, parts as i32, part as i32);
-    let mut arrow_generator = OrderArrow::new(generator).with_batch_size(batch_size);
-
-    while let Some(batch) = arrow_generator.next() {
-        writer.write_batch(batch).await?;
-    }
-
-    writer.close().await?;
-    Ok(())
-}
-
-/// Generate and write LineItem table data
-pub async fn generate_lineitem_table(
-    table: Arc<Table>,
-    scale_factor: f64,
-    batch_size: usize,
-    parts: usize,
-    part: usize,
-) -> Result<()> {
-    let mut writer = IcebergTableWriter::new(table).await?;
-    writer.initialize().await?;
-
-    let generator = LineItemGenerator::new(scale_factor, parts as i32, part as i32);
-    let mut arrow_generator = LineItemArrow::new(generator).with_batch_size(batch_size);
-
-    while let Some(batch) = arrow_generator.next() {
-        writer.write_batch(batch).await?;
-    }
-
-    writer.close().await?;
-    Ok(())
-}
-
-/// Table generation functions mapped by table name
-pub fn get_table_generator(table_name: &str) -> Option<fn(Arc<Table>, f64, usize, usize, usize) -> Result<()>> {
-    match table_name {
-        "region" => Some(|table, sf, bs, _, _| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(generate_region_table(table, sf, bs))
-            })
-        }),
-        "nation" => Some(|table, sf, bs, _, _| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(generate_nation_table(table, sf, bs))
-            })
-        }),
-        "customer" => Some(|table, sf, bs, parts, part| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(generate_customer_table(table, sf, bs, parts, part))
-            })
-        }),
-        "supplier" => Some(|table, sf, bs, parts, part| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(generate_supplier_table(table, sf, bs, parts, part))
-            })
-        }),
-        "part" => Some(|table, sf, bs, parts, part| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(generate_part_table(table, sf, bs, parts, part))
-            })
-        }),
-        "partsupp" => Some(|table, sf, bs, parts, part| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(generate_partsupp_table(table, sf, bs, parts, part))
-            })
-        }),
-        "orders" => Some(|table, sf, bs, parts, part| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(generate_orders_table(table, sf, bs, parts, part))
-            })
-        }),
-        "lineitem" => Some(|table, sf, bs, parts, part| {
-            tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(generate_lineitem_table(table, sf, bs, parts, part))
-            })
-        }),
-        _ => None,
-    }
-}
-
-/// Get all TPC-H table names
 pub fn get_all_table_names() -> Vec<&'static str> {
     vec![
         "region",
-        "nation", 
+        "nation",
         "customer",
         "supplier",
         "part",
@@ -288,22 +32,237 @@ pub fn get_all_table_names() -> Vec<&'static str> {
     ]
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub fn get_schema(table_name: &str) -> SchemaRef {
+    let generator: Box<dyn RecordBatchIterator> = match table_name {
+        "region" => {
+            Box::new(RegionArrow::new(RegionGenerator::default())) as Box<dyn RecordBatchIterator>
+        }
+        "nation" => {
+            Box::new(NationArrow::new(NationGenerator::default())) as Box<dyn RecordBatchIterator>
+        }
+        "customer" => {
+            Box::new(NationArrow::new(NationGenerator::default())) as Box<dyn RecordBatchIterator>
+        }
+        "supplier" => {
+            Box::new(NationArrow::new(NationGenerator::default())) as Box<dyn RecordBatchIterator>
+        }
+        "part" => {
+            Box::new(NationArrow::new(NationGenerator::default())) as Box<dyn RecordBatchIterator>
+        }
+        "partsupp" => {
+            Box::new(NationArrow::new(NationGenerator::default())) as Box<dyn RecordBatchIterator>
+        }
+        "orders" => {
+            Box::new(NationArrow::new(NationGenerator::default())) as Box<dyn RecordBatchIterator>
+        }
+        "lineitem" => {
+            Box::new(NationArrow::new(NationGenerator::default())) as Box<dyn RecordBatchIterator>
+        }
+        &_ => {
+            panic!("Unknown table '{}'", table_name)
+        }
+    };
 
-    #[test]
-    fn test_get_all_table_names() {
-        let names = get_all_table_names();
-        assert_eq!(names.len(), 8);
-        assert!(names.contains(&"region"));
-        assert!(names.contains(&"lineitem"));
+    generator.schema().clone()
+}
+
+/// Generate and write Region table data
+pub async fn generate_region_table_data(
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+) -> Result<()> {
+    let generator = RegionGenerator::default();
+    let mut arrow_generator = RegionArrow::new(generator);
+
+    generate_table_data(&mut arrow_generator, table, catalog).await?;
+
+    Ok(())
+}
+
+/// Generate and write Nation table data
+pub async fn generate_nation_table_data(
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+) -> Result<()> {
+    let generator = NationGenerator::default();
+    let mut arrow_generator = NationArrow::new(generator);
+
+    generate_table_data(&mut arrow_generator, table, catalog).await?;
+
+    Ok(())
+}
+
+/// Generate and write Customer table data
+pub async fn generate_customer_table(
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+    scale_factor: f64,
+    batch_size: usize,
+    parts: usize,
+) -> Result<()> {
+    //TODO First generate all data files, then append them to a table in a tx
+    for part in 1..=parts {
+        let generator = CustomerGenerator::new(scale_factor, parts as i32, part as i32);
+        let mut arrow_generator = CustomerArrow::new(generator).with_batch_size(batch_size);
+
+        generate_table_data(&mut arrow_generator, table.clone(), catalog.clone()).await?;
+    }
+    Ok(())
+}
+
+/// Generate and write Supplier table data
+pub async fn generate_supplier_table(
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+    scale_factor: f64,
+    batch_size: usize,
+    parts: usize,
+) -> Result<()> {
+    //TODO First generate all data files, then append them to a table in a tx
+    for part in 1..=parts {
+        let generator = SupplierGenerator::new(scale_factor, parts as i32, part as i32);
+        let mut arrow_generator = SupplierArrow::new(generator).with_batch_size(batch_size);
+
+        generate_table_data(&mut arrow_generator, table.clone(), catalog.clone()).await?;
+    }
+    Ok(())
+}
+
+/// Generate and write Part table data
+pub async fn generate_part_table(
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+    scale_factor: f64,
+    batch_size: usize,
+    parts: usize,
+) -> Result<()> {
+    //TODO First generate all data files, then append them to a table in a tx
+    for part in 1..=parts {
+        let generator = PartGenerator::new(scale_factor, parts as i32, part as i32);
+        let mut arrow_generator = PartArrow::new(generator).with_batch_size(batch_size);
+
+        generate_table_data(&mut arrow_generator, table.clone(), catalog.clone()).await?;
+    }
+    Ok(())
+}
+
+/// Generate and write PartSupp table data
+pub async fn generate_partsupp_table(
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+    scale_factor: f64,
+    batch_size: usize,
+    parts: usize,
+) -> Result<()> {
+    //TODO First generate all data files, then append them to a table in a tx
+    for part in 1..=parts {
+        let generator = PartSuppGenerator::new(scale_factor, parts as i32, part as i32);
+        let mut arrow_generator = PartSuppArrow::new(generator).with_batch_size(batch_size);
+
+        generate_table_data(&mut arrow_generator, table.clone(), catalog.clone()).await?;
+    }
+    Ok(())
+}
+
+/// Generate and write Orders table data
+pub async fn generate_orders_table(
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+    scale_factor: f64,
+    batch_size: usize,
+    parts: usize,
+) -> Result<()> {
+    //TODO First generate all data files, then append them to a table in a tx
+    for part in 1..=parts {
+        let generator = OrderGenerator::new(scale_factor, parts as i32, part as i32);
+        let mut arrow_generator = OrderArrow::new(generator).with_batch_size(batch_size);
+
+        generate_table_data(&mut arrow_generator, table.clone(), catalog.clone()).await?;
+    }
+    Ok(())
+}
+
+/// Generate and write LineItem table data
+pub async fn generate_lineitem_table(
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+    scale_factor: f64,
+    batch_size: usize,
+    parts: usize,
+) -> Result<()> {
+    //TODO First generate all data files, then append them to a table in a tx
+    for part in 1..=parts {
+        let generator = LineItemGenerator::new(scale_factor, parts as i32, part as i32);
+        let mut arrow_generator = LineItemArrow::new(generator).with_batch_size(batch_size);
+
+        generate_table_data(&mut arrow_generator, table.clone(), catalog.clone()).await?;
+    }
+    Ok(())
+}
+
+async fn generate_table_data(
+    source_data_iter: &mut dyn RecordBatchIterator,
+    table: Arc<Table>,
+    catalog: Arc<dyn Catalog>,
+) -> Result<()> {
+    let mut batches = Vec::new();
+    while let Some(batch) = source_data_iter.next() {
+        batches.push(batch);
     }
 
-    #[test]
-    fn test_get_table_generator() {
-        assert!(get_table_generator("region").is_some());
-        assert!(get_table_generator("lineitem").is_some());
-        assert!(get_table_generator("nonexistent").is_none());
+    let schema = source_data_iter.schema();
+
+    if !batches.is_empty() {
+        let data_files = write_batches_to_files(table.clone(), batches, schema).await?;
+
+        // Create and commit an iceberg transaction to append created DataFile(s) to the table
+        if !data_files.is_empty() {
+            let tx = Transaction::new(&table);
+            let append_action = tx.fast_append().add_data_files(data_files);
+            let tx = append_action.apply(tx)?;
+            tx.commit(catalog.as_ref()).await?;
+        }
     }
+
+    Ok(())
+}
+
+/// Write batches of data to an Iceberg table and return data files
+async fn write_batches_to_files(
+    table: Arc<Table>,
+    batches: Vec<RecordBatch>,
+    schema: &SchemaRef,
+) -> Result<Vec<DataFile>> {
+    let location_generator = DefaultLocationGenerator::new(table.metadata().clone())?;
+    let file_name_generator = DefaultFileNameGenerator::new(
+        table.identifier().name.clone(),
+        None,
+        iceberg::spec::DataFileFormat::Parquet,
+    );
+
+    let iceberg_schema = arrow_schema_to_schema(schema)?;
+
+    // dbg!(&iceberg_schema);
+
+    let schema_ref = Arc::new(iceberg_schema);
+    let parquet_writer_builder = ParquetWriterBuilder::new(
+        //TODO optimize/parameterize writer properties
+        // set compression?
+        WriterProperties::default(),
+        //TODO undertsand why schema from table is incorrect
+        schema_ref,
+        table.file_io().clone(),
+        location_generator,
+        file_name_generator,
+    );
+
+    let data_file_writer_builder = DataFileWriterBuilder::new(parquet_writer_builder, None, 0);
+    let mut data_file_writer = data_file_writer_builder.build().await?;
+
+    for batch in batches {
+        data_file_writer.write(batch).await?;
+    }
+
+    let data_files = data_file_writer.close().await?;
+    Ok(data_files)
 }

@@ -1,8 +1,10 @@
+use std::collections::HashMap;
 use crate::conversions::{decimal128_array_from_iter, string_view_array_from_display_iter};
 use crate::{DEFAULT_BATCH_SIZE, RecordBatchIterator};
 use arrow::array::{Int32Array, Int64Array, RecordBatch, StringViewArray};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use std::sync::{Arc, LazyLock};
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 use tpchgen::generators::{PartGenerator, PartGeneratorIterator};
 
 /// Generate [`Part`]s in [`RecordBatch`] format
@@ -111,14 +113,41 @@ impl Iterator for PartArrow {
 static PART_SCHEMA: LazyLock<SchemaRef> = LazyLock::new(make_part_schema);
 fn make_part_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("p_partkey", DataType::Int64, false),
-        Field::new("p_name", DataType::Utf8View, false),
-        Field::new("p_mfgr", DataType::Utf8View, false),
-        Field::new("p_brand", DataType::Utf8View, false),
-        Field::new("p_type", DataType::Utf8View, false),
-        Field::new("p_size", DataType::Int32, false),
-        Field::new("p_container", DataType::Utf8View, false),
-        Field::new("p_retailprice", DataType::Decimal128(15, 2), false),
-        Field::new("p_comment", DataType::Utf8View, false),
+        Field::new("p_partkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            1.to_string(),
+        )])),
+        Field::new("p_name", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            2.to_string(),
+        )])),
+        Field::new("p_mfgr", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            3.to_string(),
+        )])),
+        Field::new("p_brand", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            4.to_string(),
+        )])),
+        Field::new("p_type", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            5.to_string(),
+        )])),
+        Field::new("p_size", DataType::Int32, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            6.to_string(),
+        )])),
+        Field::new("p_container", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            7.to_string(),
+        )])),
+        Field::new("p_retailprice", DataType::Decimal128(15, 2), false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            8.to_string(),
+        )])),
+        Field::new("p_comment", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            9.to_string(),
+        )])),
     ]))
 }

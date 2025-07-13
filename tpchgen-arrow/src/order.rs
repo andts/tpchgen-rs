@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use crate::conversions::{
     decimal128_array_from_iter, string_view_array_from_display_iter, to_arrow_date32,
 };
@@ -5,6 +6,7 @@ use crate::{DEFAULT_BATCH_SIZE, RecordBatchIterator};
 use arrow::array::{Date32Array, Int32Array, Int64Array, RecordBatch, StringViewArray};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use std::sync::{Arc, LazyLock};
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 use tpchgen::generators::{OrderGenerator, OrderGeneratorIterator};
 
 /// Generate [`Order`]s in [`RecordBatch`] format
@@ -116,14 +118,41 @@ impl Iterator for OrderArrow {
 static ORDER_SCHEMA: LazyLock<SchemaRef> = LazyLock::new(make_order_schema);
 fn make_order_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("o_orderkey", DataType::Int64, false),
-        Field::new("o_custkey", DataType::Int64, false),
-        Field::new("o_orderstatus", DataType::Utf8View, false),
-        Field::new("o_totalprice", DataType::Decimal128(15, 2), false),
-        Field::new("o_orderdate", DataType::Date32, false),
-        Field::new("o_orderpriority", DataType::Utf8View, false),
-        Field::new("o_clerk", DataType::Utf8View, false),
-        Field::new("o_shippriority", DataType::Int32, false),
-        Field::new("o_comment", DataType::Utf8View, false),
+        Field::new("o_orderkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            1.to_string(),
+        )])),
+        Field::new("o_custkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            2.to_string(),
+        )])),
+        Field::new("o_orderstatus", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            3.to_string(),
+        )])),
+        Field::new("o_totalprice", DataType::Decimal128(15, 2), false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            4.to_string(),
+        )])),
+        Field::new("o_orderdate", DataType::Date32, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            5.to_string(),
+        )])),
+        Field::new("o_orderpriority", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            6.to_string(),
+        )])),
+        Field::new("o_clerk", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            7.to_string(),
+        )])),
+        Field::new("o_shippriority", DataType::Int32, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            8.to_string(),
+        )])),
+        Field::new("o_comment", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            9.to_string(),
+        )])),
     ]))
 }

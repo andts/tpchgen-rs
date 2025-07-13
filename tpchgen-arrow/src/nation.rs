@@ -1,7 +1,9 @@
+use std::collections::HashMap;
 use crate::{DEFAULT_BATCH_SIZE, RecordBatchIterator};
 use arrow::array::{Int64Array, RecordBatch, StringViewArray};
 use arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use std::sync::{Arc, LazyLock};
+use parquet::arrow::PARQUET_FIELD_ID_META_KEY;
 use tpchgen::generators::{NationGenerator, NationGeneratorIterator};
 
 /// Generate  [`Nation`]s in [`RecordBatch`] format
@@ -100,9 +102,21 @@ impl Iterator for NationArrow {
 static NATION_SCHEMA: LazyLock<SchemaRef> = LazyLock::new(make_nation_schema);
 fn make_nation_schema() -> SchemaRef {
     Arc::new(Schema::new(vec![
-        Field::new("n_nationkey", DataType::Int64, false),
-        Field::new("n_name", DataType::Utf8View, false),
-        Field::new("n_regionkey", DataType::Int64, false),
-        Field::new("n_comment", DataType::Utf8View, false),
+        Field::new("n_nationkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            1.to_string(),
+        )])),
+        Field::new("n_name", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            2.to_string(),
+        )])),
+        Field::new("n_regionkey", DataType::Int64, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            3.to_string(),
+        )])),
+        Field::new("n_comment", DataType::Utf8View, false).with_metadata(HashMap::from_iter([(
+            PARQUET_FIELD_ID_META_KEY.to_string(),
+            4.to_string(),
+        )])),
     ]))
 }
