@@ -9,34 +9,33 @@
 //! # use std::collections::HashMap;
 //! # use tpchgen_iceberg::{IcebergGenerator, IcebergConfig};
 //! # use tokio;
-//! # 
+//! #
 //! # #[tokio::main]
 //! # async fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create configuration for Iceberg catalog
 //! let config = IcebergConfig {
 //!     catalog_type: "rest".to_string(),
-//!     catalog_uri: "http://localhost:8181".to_string(),
-//!     warehouse_location: "s3://my-bucket/warehouse".to_string(),
+//!     uri: "http://localhost:8181".to_string(),
+//!     warehouse: "warehouse".to_string(),
 //!     properties: HashMap::new(),
 //! };
 //!
 //! // Create generator and generate all tables for scale factor 1
-//! let generator = IcebergGenerator::new(config).await?;
-//! generator.generate_all_tables(1.0, 5).await?;
+//! let generator = IcebergGenerator::new(config,).await?;
+//! // generator.generate_all_tables(1.0, 5).await?;
 //! # Ok(())
 //! # }
 //! ```
 
+pub mod catalog;
 pub mod config;
 pub mod generator;
-pub mod catalog;
 pub mod tables;
-
-use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 // Remove the export since IcebergConfig is already defined here
 pub use generator::IcebergGenerator;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// Configuration for Iceberg catalog connectivity
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,11 +43,18 @@ pub struct IcebergConfig {
     /// Type of catalog (rest, hive, glue, etc.)
     pub catalog_type: String,
     /// URI or connection string for the catalog
-    pub catalog_uri: String,
+    pub uri: String,
     /// Base location for the warehouse
-    pub warehouse_location: String,
+    pub warehouse: String,
+    /// Namespace for Iceberg tables
+    #[serde(default = "default_namespace")]
+    pub namespace: String,
     /// Additional credentials and configuration
     pub properties: HashMap<String, String>,
+}
+
+fn default_namespace() -> String {
+    "tpch".to_string()
 }
 
 /// Error type for Iceberg operations

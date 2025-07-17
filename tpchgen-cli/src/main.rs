@@ -13,7 +13,7 @@
 //!     -V, --version                 Prints version information
 //!     -s, --scale-factor <FACTOR>  Scale factor for the data generation (default: 1)
 //!     -T, --tables <TABLES>        Comma-separated list of tables to generate (default: all)
-//!     -f, --format <FORMAT>        Output format: tbl, csv, or parquet (default: tbl)
+//!     -f, --format <FORMAT>        Output format: tbl, csv, parquet, or iceberg (default: tbl)
 //!     -o, --output-dir <DIR>       Output directory (default: current directory)
 //!     -p, --parts <N>              Number of parts to split generation into (default: 1)
 //!         --part <N>               Which part to generate (1-based, default: 1)
@@ -41,6 +41,7 @@
 //! ```
 mod csv;
 mod generate;
+mod iceberg;
 mod parquet;
 mod plan;
 mod statistics;
@@ -48,6 +49,7 @@ mod tbl;
 
 use crate::csv::*;
 use crate::generate::{generate_in_chunks, Sink, Source};
+use crate::iceberg::{generate_iceberg_table, load_config};
 use crate::parquet::*;
 use crate::plan::GenerationPlan;
 use crate::statistics::WriteStatistics;
@@ -72,6 +74,7 @@ use tpchgen_arrow::{
     CustomerArrow, LineItemArrow, NationArrow, OrderArrow, PartArrow, PartSuppArrow,
     RecordBatchIterator, RegionArrow, SupplierArrow,
 };
+use tpchgen_iceberg::IcebergConfig;
 
 #[derive(Parser)]
 #[command(name = "tpchgen")]
@@ -100,7 +103,7 @@ struct Cli {
     #[arg(long)]
     part: Option<i32>,
 
-    /// Output format: tbl, csv, parquet (default: tbl)
+    /// Output format: tbl, csv, parquet, iceberg (default: tbl)
     #[arg(short, long, default_value = "tbl")]
     format: OutputFormat,
 
@@ -131,6 +134,13 @@ struct Cli {
     /// Write the output to stdout instead of a file.
     #[arg(long, default_value_t = false)]
     stdout: bool,
+
+    /// JSON configuration file for Iceberg catalog settings (required when format is iceberg)
+    #[arg(long)]
+    catalog: Option<PathBuf>,
+
+    #[arg(skip)]
+    catalog_config: Option<IcebergConfig>,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -234,13 +244,7 @@ enum OutputFormat {
     Tbl,
     Csv,
     Parquet,
-}
-
-#[tokio::main]
-async fn main() -> io::Result<()> {
-    // Parse command line arguments
-    let cli = Cli::parse();
-    cli.main().await
+    Iceberg,
 }
 
 /// macro to create a Cli function for generating a table
@@ -267,7 +271,9 @@ macro_rules! define_generate {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
             let scale_factor = self.scale_factor;
             info!("Writing table {} (SF={scale_factor}) to {filename}", $TABLE);
+            debug!("Generating {num_parts} parts in total");
             debug!("Plan: {plan}");
+            let gens = parts
             let gens = plan
                 .into_iter()
                 .map(move |(part, num_parts)| $GENERATOR::new(scale_factor, part, num_parts));
@@ -278,13 +284,24 @@ macro_rules! define_generate {
                     self.go_parquet(&filename, gens.map(<$PARQUET_SOURCE>::new))
                         .await
                 }
+                OutputFormat::Iceberg => {
+                    self.go_iceberg($TABLE, gens.map(<$PARQUET_SOURCE>::new))
+                        .await
+                }
             }
         }
     };
 }
 
+#[tokio::main]
+async fn main() -> io::Result<()> {
+    // Parse command line arguments
+    let cli = Cli::parse();
+    cli.main().await
+}
+
 impl Cli {
-    async fn main(self) -> io::Result<()> {
+    async fn main(mut self) -> io::Result<()> {
         if self.verbose {
             // explicitly set logging to info / stdout
             env_logger::builder().filter_level(LevelFilter::Info).init();
@@ -294,8 +311,31 @@ impl Cli {
             debug!("Logging configured from environment variables");
         }
 
+        // Validate iceberg format options
+        if self.format == OutputFormat::Iceberg {
+            if self.catalog.is_none() {
+                eprintln!("Error: --catalog option is required when format is iceberg");
+                std::process::exit(1);
+            }
+
+            //TODO this looks stupid. is there a better way to load of the config?
+            if let Some(path) = self.catalog.clone() {
+                let result =
+                    load_config(&path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+                self.catalog_config.replace(result);
+            }
+
+            if self.part != 1 {
+                eprintln!("Warning: --part option is ignored when format is iceberg");
+            }
+
+            if self.output_dir != PathBuf::from(".") {
+                eprintln!("Warning: --output-dir option is ignored when format is iceberg");
+            }
+        }
+
         // Create output directory if it doesn't exist and we are not writing to stdout.
-        if !self.stdout {
+        if !self.stdout && self.format != OutputFormat::Iceberg {
             fs::create_dir_all(&self.output_dir)?;
         }
 
@@ -413,6 +453,7 @@ impl Cli {
             OutputFormat::Tbl => "tbl",
             OutputFormat::Csv => "csv",
             OutputFormat::Parquet => "parquet",
+            OutputFormat::Iceberg => "iceberg", // This won't be used for actual files
         };
         format!("{}.{extension}", table.name())
     }
@@ -453,6 +494,16 @@ impl Cli {
             let writer = BufWriter::with_capacity(32 * 1024 * 1024, file); // 32MB buffer
             generate_parquet(writer, sources, self.num_threads, self.parquet_compression).await
         }
+    }
+
+    /// Generates an output parquet file from the sources
+    async fn go_iceberg<I>(&self, table: Table, sources: I) -> Result<(), io::Error>
+    where
+        I: Iterator<Item: RecordBatchIterator> + 'static,
+    {
+        generate_iceberg_table(&table, self.catalog_config.clone().unwrap(), sources)
+            .await
+            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }
 
