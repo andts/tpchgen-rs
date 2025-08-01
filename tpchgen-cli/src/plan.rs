@@ -75,17 +75,22 @@ impl GenerationPlan {
             (Some(_part), None) => Err(String::from(
                 "The --part option requires the --parts option to be set",
             )),
-            (None, Some(_part_count)) => {
-                // TODO automatically create multiple files if part_count > 1
-                // and part is not specified
-                Err(String::from(
-                    "The --part_count option requires the --part option to be set",
-                ))
+            (None, Some(part_count)) => {
+                if format == OutputFormat::Iceberg {
+                    //TODO better method name or a separate method?
+                    Self::try_new_without_parts(table, format, scale_factor, Some(part_count))
+                } else {
+                    // TODO automatically create multiple files if part_count > 1
+                    // and part is not specified
+                    Err(String::from(
+                        "The --part_count option requires the --part option to be set",
+                    ))
+                }
             }
             (Some(part), Some(part_count)) => {
                 Self::try_new_with_parts(table, format, scale_factor, part, part_count, num_threads)
             }
-            (None, None) => Self::try_new_without_parts(table, format, scale_factor),
+            (None, None) => Self::try_new_without_parts(table, format, scale_factor, None),
         }
     }
 
@@ -152,6 +157,7 @@ impl GenerationPlan {
         table: &Table,
         format: OutputFormat,
         scale_factor: f64,
+        max_parts: Option<i32>,
     ) -> Result<Self, String> {
         // Note use part=1, part_count=1 to calculate the total row count
         // for the table
@@ -191,6 +197,11 @@ impl GenerationPlan {
         // parquet files can have at most 32767 row groups so cap the number of parts at that number
         if format == OutputFormat::Parquet {
             num_parts = num_parts.min(32767);
+        }
+
+        // for iceberg num_parts is used as the number of files, and can be limited if the param specified
+        if format == OutputFormat::Iceberg && max_parts.is_some() {
+            num_parts = num_parts.min(max_parts.unwrap() as i64);
         }
 
         // convert to i32

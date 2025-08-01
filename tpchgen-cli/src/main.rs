@@ -271,9 +271,7 @@ macro_rules! define_generate {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
             let scale_factor = self.scale_factor;
             info!("Writing table {} (SF={scale_factor}) to {filename}", $TABLE);
-            debug!("Generating {num_parts} parts in total");
             debug!("Plan: {plan}");
-            let gens = parts
             let gens = plan
                 .into_iter()
                 .map(move |(part, num_parts)| $GENERATOR::new(scale_factor, part, num_parts));
@@ -318,15 +316,11 @@ impl Cli {
                 std::process::exit(1);
             }
 
-            //TODO this looks stupid. is there a better way to load of the config?
+            //TODO this looks stupid. is there a better way to load the config?
             if let Some(path) = self.catalog.clone() {
                 let result =
                     load_config(&path).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
                 self.catalog_config.replace(result);
-            }
-
-            if self.part != 1 {
-                eprintln!("Warning: --part option is ignored when format is iceberg");
             }
 
             if self.output_dir != PathBuf::from(".") {
