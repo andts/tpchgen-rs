@@ -21,12 +21,14 @@ pub async fn generate_iceberg_table<I>(
     table: &Table,
     config: IcebergConfig,
     sources: I,
+    num_threads: usize,
 ) -> Result<(), IcebergError>
 where
     I: Iterator<Item: RecordBatchIterator> + 'static,
 {
     info!("Initializing Iceberg generator with config {:?}", config);
-    let generator = IcebergGenerator::new(config).await?;
+    let generator = IcebergGenerator::new(config).await?
+        .with_max_concurrent_parts(num_threads);
 
     info!("Generating table: {}", table.name());
     generator

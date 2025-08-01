@@ -1,25 +1,26 @@
-//! Main Iceberg generator orchestration
-
 use crate::catalog::IcebergCatalog;
-use crate::tables::*;
-use crate::{IcebergConfig, Result};
+use crate::{IcebergConfig, IcebergError, Result};
+use arrow::array::RecordBatch;
+use futures::StreamExt;
 use iceberg::arrow::arrow_schema_to_schema;
-use iceberg::writer::base_writer::data_file_writer::DataFileWriterBuilder;
+use iceberg::spec::DataFile;
+use iceberg::transaction::{ApplyTransactionAction, Transaction};
+use iceberg::writer::base_writer::data_file_writer::{DataFileWriter, DataFileWriterBuilder};
 use iceberg::writer::file_writer::location_generator::{
     DefaultFileNameGenerator, DefaultLocationGenerator,
 };
 use iceberg::writer::file_writer::ParquetWriterBuilder;
-use iceberg::writer::IcebergWriterBuilder;
+use iceberg::writer::{IcebergWriter, IcebergWriterBuilder};
 use iceberg::TableIdent;
+use parquet::basic::Compression;
 use parquet::file::properties::WriterProperties;
 use std::sync::Arc;
 use tpchgen_arrow::RecordBatchIterator;
 
-/// Main generator for TPC-H data in Iceberg format
 pub struct IcebergGenerator {
     catalog: IcebergCatalog,
     batch_size: usize,
-    max_concurrent_tables: usize,
+    max_concurrent_parts: usize,
 }
 
 impl IcebergGenerator {
@@ -29,8 +30,8 @@ impl IcebergGenerator {
 
         Ok(IcebergGenerator {
             catalog,
-            batch_size: 8192,         // Default batch size
-            max_concurrent_tables: 4, // Default concurrency
+            batch_size: 8192,
+            max_concurrent_parts: 4,
         })
     }
 
@@ -41,17 +42,20 @@ impl IcebergGenerator {
     }
 
     /// Set the maximum number of concurrent table generations
-    pub fn with_max_concurrent_tables(mut self, max_concurrent: usize) -> Self {
-        self.max_concurrent_tables = max_concurrent;
+    pub fn with_max_concurrent_parts(mut self, max_concurrent: usize) -> Self {
+        self.max_concurrent_parts = max_concurrent;
         self
     }
 
-    /// Generate specified tables
-    pub async fn generate_table(
+    /// Generate specified table
+    pub async fn generate_table<I>(
         &self,
         table_name: &str,
-        sources: Box<dyn Iterator<Item = impl RecordBatchIterator>>,
-    ) -> Result<()> {
+        sources: Box<dyn Iterator<Item = I>>,
+    ) -> Result<()>
+    where
+        I: RecordBatchIterator + Send + 'static,
+    {
         log::info!("generate iceberg table {table_name}");
 
         let mut sources_iter = sources.peekable();
@@ -83,10 +87,13 @@ impl IcebergGenerator {
             iceberg::spec::DataFileFormat::Parquet,
         );
 
+        let writer_properties = WriterProperties::builder()
+            //TODO make configurable
+            .set_compression(Compression::SNAPPY)
+            .build();
+
         let parquet_writer_builder = ParquetWriterBuilder::new(
-            //TODO optimize/parameterize writer properties
-            // set compression?
-            WriterProperties::default(),
+            writer_properties,
             Arc::new(iceberg_schema),
             table.file_io().clone(),
             location_gen,
@@ -95,132 +102,85 @@ impl IcebergGenerator {
 
         let data_file_writer_builder = DataFileWriterBuilder::new(parquet_writer_builder, None, 0);
 
-        for mut batch_iter in sources_iter {
-            //write data from one 'part' into a file and add it to the table
-            let mut data_file_writer = data_file_writer_builder.clone().build().await?;
-            generate_table_part(
-                &mut batch_iter,
-                table.clone(),
-                catalog.clone(),
-                &mut data_file_writer,
-            )
-            .await?;
+        // Process parts in parallel and collect all data files
+        let mut part_stream = futures::stream::iter(sources_iter)
+            .map(|mut batch_iter| {
+                let data_file_writer_builder = data_file_writer_builder.clone();
+                let table_name = table_name.to_string();
+
+                // Run each part generation on a separate thread
+                tokio::task::spawn(async move {
+                    let mut data_file_writer = data_file_writer_builder.build().await?;
+                    generate_table_part(&mut batch_iter, &table_name, &mut data_file_writer).await
+                })
+            })
+            .buffered(self.max_concurrent_parts); // Limit concurrency
+
+        // Collect all data files from all parts
+        let mut all_data_files = Vec::new();
+        while let Some(result) = part_stream.next().await {
+            // Handle the result from the spawned task
+            let data_files =
+                result.map_err(|e| IcebergError::Runtime(format!("Task join error: {}", e)))??;
+            all_data_files.extend(data_files);
+        }
+
+        // Commit all data files in a single transaction
+        if !all_data_files.is_empty() {
+            let tx = Transaction::new(&table);
+            let append_action = tx.fast_append().add_data_files(all_data_files.clone());
+            let tx = append_action.apply(tx)?;
+            tx.commit(catalog.as_ref()).await?;
+            log::info!(
+                "Committed {} data files to table {}",
+                all_data_files.len(),
+                table_name
+            );
         }
 
         log::debug!("table {table_name} generated");
 
         Ok(())
     }
+}
 
-    /// List all available tables in the catalog
-    pub async fn list_tables(&self) -> Result<Vec<String>> {
-        let tables = self
-            .catalog
-            .catalog()
-            .list_tables(&self.catalog.namespace().name().clone())
-            .await?;
-        let table_names: Vec<String> = tables.into_iter().map(|t| t.name).collect();
-        Ok(table_names)
+async fn generate_table_part(
+    source_data_iter: &mut dyn RecordBatchIterator,
+    table_name: &str,
+    data_file_writer: &mut DataFileWriter<
+        ParquetWriterBuilder<DefaultLocationGenerator, DefaultFileNameGenerator>,
+    >,
+) -> Result<Vec<DataFile>> {
+    log::info!("Generated data part for table {}", table_name);
+
+    let mut batches = Vec::new();
+    while let Some(batch) = source_data_iter.next() {
+        batches.push(batch);
     }
 
-    /// Check if a table exists
-    pub async fn table_exists(&self, table_name: &str) -> Result<bool> {
-        let table_ident = TableIdent::new(
-            self.catalog.namespace().name().clone(),
-            table_name.to_string(),
+    if !batches.is_empty() {
+        let data_files = write_batches_to_files(batches, data_file_writer).await?;
+        log::info!(
+            "Generated {} data files for table {}",
+            data_files.len(),
+            table_name
         );
-        Ok(self.catalog.catalog().table_exists(&table_ident).await?)
-    }
-
-    /// Get statistics for a table
-    pub async fn get_table_stats(&self, table_name: &str) -> Result<String> {
-        let table_ident = TableIdent::new(
-            self.catalog.namespace().name().clone(),
-            table_name.to_string(),
-        );
-        let table = self.catalog.catalog().load_table(&table_ident).await?;
-
-        let metadata = table.metadata();
-        let current_snapshot = metadata.current_snapshot();
-
-        if let Some(snapshot) = current_snapshot {
-            let summary = snapshot.summary();
-            Ok(format!(
-                "Table: {}\n\
-                 Snapshot ID: {}\n\
-                 Total Records: {}\n\
-                 Total Data Files: {}\n\
-                 Total Size: {} bytes",
-                table_name,
-                snapshot.snapshot_id(),
-                summary
-                    .additional_properties
-                    .get("total-records")
-                    .unwrap_or(&"unknown".to_string()),
-                summary
-                    .additional_properties
-                    .get("total-data-files")
-                    .unwrap_or(&"unknown".to_string()),
-                summary
-                    .additional_properties
-                    .get("total-size")
-                    .unwrap_or(&"unknown".to_string()),
-            ))
-        } else {
-            Ok(format!("Table: {} (no data)", table_name))
-        }
+        Ok(data_files)
+    } else {
+        Ok(Vec::new())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::IcebergConfig;
-    use tempfile::TempDir;
-
-    #[tokio::test]
-    async fn test_generator_creation() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = IcebergConfig::local_filesystem(temp_dir.path());
-
-        let generator = IcebergGenerator::new(config).await.unwrap();
-        assert_eq!(generator.batch_size, 8192);
-        assert_eq!(generator.max_concurrent_tables, 4);
+async fn write_batches_to_files(
+    batches: Vec<RecordBatch>,
+    data_file_writer: &mut DataFileWriter<
+        ParquetWriterBuilder<DefaultLocationGenerator, DefaultFileNameGenerator>,
+    >,
+) -> Result<Vec<DataFile>> {
+    for batch in batches {
+        data_file_writer.write(batch).await?;
     }
 
-    #[tokio::test]
-    async fn test_generator_with_custom_settings() {
-        let temp_dir = TempDir::new().unwrap();
-        let config = IcebergConfig::local_filesystem(temp_dir.path());
-
-        let generator = IcebergGenerator::new(config)
-            .await
-            .unwrap()
-            .with_batch_size(1024)
-            .with_max_concurrent_tables(2);
-
-        assert_eq!(generator.batch_size, 1024);
-        assert_eq!(generator.max_concurrent_tables, 2);
-    }
-
-    #[tokio::test]
-    async fn test_small_scale_generation() {
-        // let temp_dir = TempDir::new().unwrap();
-        let config = IcebergConfig::rest_catalog(
-            "http://localhost:8181/catalog".to_string(),
-            "testwarehouse".to_string(),
-            "tpch_test_1".to_string(),
-        )
-        .with_property("s3.access-key-id".to_string(), "minioadmin".to_string())
-        .with_property("s3.secret-access-key".to_string(), "minioadmin".to_string());
-
-        let generator = IcebergGenerator::new(config).await.unwrap();
-
-        // Generate only small tables for testing
-        // generator.generate_all_tables(1.0, 1).await.unwrap();
-
-        let tables = generator.list_tables().await.unwrap();
-        assert!(tables.contains(&"region".to_string()));
-        assert!(tables.contains(&"nation".to_string()));
-    }
+    let data_files = data_file_writer.close().await?;
+    Ok(data_files)
 }

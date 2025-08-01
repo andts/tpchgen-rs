@@ -501,9 +501,14 @@ impl Cli {
     where
         I: Iterator<Item: RecordBatchIterator> + 'static,
     {
-        generate_iceberg_table(&table, self.catalog_config.clone().unwrap(), sources)
-            .await
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+        generate_iceberg_table(
+            &table,
+            self.catalog_config.clone().unwrap(),
+            sources,
+            self.num_threads,
+        )
+        .await
+        .map_err(|e| io::Error::new(io::ErrorKind::Other, e))
     }
 }
 

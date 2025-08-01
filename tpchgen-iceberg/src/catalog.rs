@@ -1,14 +1,11 @@
 //! Iceberg catalog management
 
 use crate::{IcebergConfig, IcebergError, Result};
-use iceberg::io::FileIOBuilder;
 use iceberg::spec::Schema;
 use iceberg::{Catalog, Namespace, TableCreation, TableIdent};
-use iceberg_catalog_memory::MemoryCatalog;
 use iceberg_catalog_rest::RestCatalog;
 use std::collections::HashMap;
 use std::sync::Arc;
-use tempfile::TempDir;
 
 /// Wrapper around Iceberg catalog operations
 pub struct IcebergCatalog {
@@ -22,9 +19,7 @@ impl IcebergCatalog {
         config.validate()?;
 
         let catalog = match config.catalog_type.as_str() {
-            "filesystem" => Self::create_filesystem_catalog(config)?,
             "rest" => Self::create_rest_catalog(config).await?,
-            "glue" => Self::create_glue_catalog(config).await?,
             _ => {
                 return Err(IcebergError::Config(format!(
                     "Unsupported catalog type: {}",
@@ -40,27 +35,9 @@ impl IcebergCatalog {
         Ok(IcebergCatalog { catalog, namespace })
     }
 
-    /// Create a filesystem catalog (using memory catalog for local testing)
-    fn create_filesystem_catalog(_config: &IcebergConfig) -> Result<Arc<dyn Catalog>> {
-        // For now, use MemoryCatalog as a placeholder for filesystem catalog
-        // In a real implementation, this would use a proper filesystem catalog
-        let file_io = FileIOBuilder::new_fs_io().build().unwrap();
-        let warehouse_location = Self::temp_path();
-
-        let catalog = MemoryCatalog::new(file_io, Some(warehouse_location));
-        Ok(Arc::new(catalog))
-    }
-
-    fn temp_path() -> String {
-        let temp_dir = TempDir::new().unwrap();
-        temp_dir.path().to_str().unwrap().to_string()
-    }
-
     /// Create a REST catalog
     async fn create_rest_catalog(config: &IcebergConfig) -> Result<Arc<dyn Catalog>> {
         let mut properties = HashMap::new();
-        // properties.insert("uri".to_string(), config.catalog_uri.clone());
-        // properties.insert("warehouse".to_string(), config.warehouse_location.clone());
         for (key, value) in &config.properties {
             properties.insert(key.clone(), value.clone());
         }
@@ -71,16 +48,6 @@ impl IcebergCatalog {
             .props(properties)
             .build();
         let catalog = RestCatalog::new(config);
-        Ok(Arc::new(catalog))
-    }
-
-    /// Create a Glue catalog (using memory catalog as placeholder)
-    async fn create_glue_catalog(_config: &IcebergConfig) -> Result<Arc<dyn Catalog>> {
-        // For now, use MemoryCatalog as a placeholder for Glue catalog
-        // In a real implementation, this would use iceberg-catalog-glue crate
-        //TODO add real implementation
-        let file_io = iceberg::io::FileIO::from_path("memory://")?.build()?;
-        let catalog = MemoryCatalog::new(file_io, None);
         Ok(Arc::new(catalog))
     }
 
@@ -108,6 +75,7 @@ impl IcebergCatalog {
 
         // Check if table already exists
         if self.catalog.table_exists(&table_ident).await? {
+            //TODO or throw an error?
             log::info!("Table {} already exists, skipping creation", table_name);
             return Ok(());
         }

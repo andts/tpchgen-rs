@@ -19,7 +19,7 @@ We actively welcome your pull requests.
 3. If you've changed APIs, update the documentation.
 4. Ensure the standard tests and conformance tests are passing.
 5. Make sure your code follows Rust best practices, address any linting issues clippy might find.
-6. Open your pull request and wait for a review and approval.book.com/cla>
+6. Open your pull request and wait for a review and approval.
 
 ## Issues
 
